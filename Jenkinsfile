@@ -28,8 +28,8 @@ pipeline {
 
         stage('Deploy to app server') {
             steps {
-                // Fixed: Changed from 'app-server-ssh' to 'vagrant' to match your working configuration
-                sshagent(['vagrant']) {
+                // Switched back to 'app-server-ssh' based on your Jenkins Store setup
+                sshagent(['app-server-ssh']) {
                     sh '''
                         ssh -o StrictHostKeyChecking=no ${APP_HOST} "mkdir -p ${DEPLOY_DIR}"
                         rsync -az --delete --exclude venv --exclude .git --exclude postgres_data \
