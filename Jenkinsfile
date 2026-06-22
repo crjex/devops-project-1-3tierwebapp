@@ -41,7 +41,7 @@ pipeline {
                     sh '''
                         ssh -o StrictHostKeyChecking=no ${APP_HOST} "
                             cd ${DEPLOY_DIR} &&
-                            ${COMPOSE} --env-file .env up --build -d &&
+                            ${COMPOSE} --env-file .env up --build --force-recreate -d &&
                             ${COMPOSE} ps
                         "
                     '''
