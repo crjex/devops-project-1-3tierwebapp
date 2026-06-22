@@ -13,6 +13,7 @@ services:
 
   database:
     build: ./database
+    hostname: database
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
