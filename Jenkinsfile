@@ -28,7 +28,6 @@ pipeline {
 
         stage('Deploy to app server') {
             steps {
-                // Switched back to 'app-server-ssh' based on your Jenkins Store setup
                 sshagent(['app-server-ssh']) {
                     sh '''
                         ssh -o StrictHostKeyChecking=no ${APP_HOST} "mkdir -p ${DEPLOY_DIR}"
