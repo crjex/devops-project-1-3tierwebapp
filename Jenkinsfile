@@ -41,6 +41,7 @@ pipeline {
                     sh '''
                         ssh -o StrictHostKeyChecking=no ${APP_HOST} "
                             cd ${DEPLOY_DIR} &&
+                            if [ -f .env ]; then export \\$(cat .env | xargs); fi &&
                             ${COMPOSE} --env-file .env up --build --force-recreate -d &&
                             ${COMPOSE} ps
                         "
