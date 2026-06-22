@@ -21,6 +21,8 @@ services:
     build: ./backend
     depends_on:
       - database
+    links:
+      - database:database   # <--- CRITICAL: Explicitly forces local DNS registration inside this container
     env_file: .env
     environment:
       - FLASK_ENV=development
