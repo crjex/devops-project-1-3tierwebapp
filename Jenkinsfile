@@ -9,7 +9,7 @@ pipeline {
     }
 
     triggers {
-        githubPush() 
+        githubPush()
     }
 
     stages {
@@ -28,7 +28,8 @@ pipeline {
 
         stage('Deploy to app server') {
             steps {
-                sshagent(['app-server-ssh']) {
+                // Fixed: Changed from 'app-server-ssh' to 'vagrant' to match your working configuration
+                sshagent(['vagrant']) {
                     sh '''
                         ssh -o StrictHostKeyChecking=no ${APP_HOST} "mkdir -p ${DEPLOY_DIR}"
                         rsync -az --delete --exclude venv --exclude .git --exclude postgres_data \
@@ -41,15 +42,15 @@ pipeline {
                     sh '''
                         ssh -o StrictHostKeyChecking=no ${APP_HOST} "
                             cd ${DEPLOY_DIR} &&
-                            if [ -f .env ]; then export \\$(cat .env | xargs); fi &&
-                            ${COMPOSE} --env-file .env up --build --force-recreate -d &&
+                            ${COMPOSE} down -v &&
+                            ${COMPOSE} up --build --force-recreate -d &&
                             ${COMPOSE} ps
                         "
                     '''
                 }
             }
         }
-        
+
         stage('Smoke test') {
             steps {
                 sh '''

@@ -11,6 +11,7 @@ services:
 
   database:
     build: ./database
+    env_file: .env       # <--- Natively loads the .env variables directly into Postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -24,6 +25,7 @@ services:
     build: ./backend
     depends_on:
       - database
+    env_file: .env       # <--- Natively loads the .env variables directly into Flask
     environment:
       FLASK_ENV: ${FLASK_ENV}
       DB_HOST: database
