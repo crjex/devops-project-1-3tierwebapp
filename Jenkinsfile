@@ -8,9 +8,8 @@ pipeline {
         COMPOSE    = "docker compose -p mytodoapp"
     }
 
-    // Add this triggers block to listen for git webhooks
     triggers {
-        githubPush() // Use upstream() or gitlab() if not using GitHub
+        githubPush() 
     }
 
     stages {
@@ -27,7 +26,7 @@ pipeline {
             }
         }
 
-       stage('Deploy to app server') {
+        stage('Deploy to app server') {
             steps {
                 sshagent(['app-server-ssh']) {
                     sh '''
@@ -49,6 +48,7 @@ pipeline {
                 }
             }
         }
+        
         stage('Smoke test') {
             steps {
                 sh '''
