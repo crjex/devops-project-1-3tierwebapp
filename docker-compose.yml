@@ -11,7 +11,6 @@ services:
 
   database:
     build: ./database
-    env_file: .env
     environment:
       # Maps your .env keys directly to the native names Postgres expects
       - POSTGRES_DB=${DB_NAME}
