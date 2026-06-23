@@ -38,12 +38,13 @@ pipeline {
                     withCredentials([file(credentialsId: 'todo-env', variable: 'ENV_FILE')]) {
                         sh 'scp -o StrictHostKeyChecking=no "$ENV_FILE" ${APP_HOST}:${DEPLOY_DIR}/.env'
                     }
+                    // Updated this block below to explicitly pass the .env file to your old Docker Compose engine
                     sh '''
                         ssh -o StrictHostKeyChecking=no ${APP_HOST} "
                             cd ${DEPLOY_DIR} &&
-                            ${COMPOSE} down -v &&
-                            ${COMPOSE} up --build --force-recreate -d &&
-                            ${COMPOSE} ps
+                            docker compose --env-file .env -p mytodoapp down -v &&
+                            docker compose --env-file .env -p mytodoapp up --build --force-recreate -d &&
+                            docker compose -p mytodoapp ps
                         "
                     '''
                 }

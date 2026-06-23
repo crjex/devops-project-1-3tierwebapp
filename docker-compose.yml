@@ -1,7 +1,3 @@
-# Add this at the very top of your file
-env_file:
-  - .env
-
 services:
   web:
     image: nginx:latest
