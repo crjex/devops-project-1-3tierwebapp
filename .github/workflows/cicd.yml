@@ -1,0 +1,70 @@
+name: Deploy Todo Application
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Pull code down to the runner
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # 2. Compile test code (Replaces your Jenkins backend test stage)
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-python-version: '3.9'
+
+    - name: Run Backend Syntax Test
+      run: |
+        cd backend
+        python -m py_compile $(find src -name "*.py")
+
+    # 3. Configure SSH Keys to talk to your Vagrant VM
+    - name: Install SSH Key
+      uses: shimataro/ssh-key-action@v2
+      with:
+        key: ${{ secrets.APP_SERVER_SSH_KEY }}
+        known_hosts: 'placeholder'
+        if_key_exists: replace
+
+    # 4. Sync files over to the app server using Rsync
+    - name: Deploy Files via Rsync
+      run: |
+        ssh-keyscan -H 192.168.65.132 >> ~/.ssh/known_hosts
+        rsync -az --delete --exclude venv --exclude .git --exclude postgres_data \
+          -e "ssh" \
+          ./ vagrant@192.168.65.132:/home/vagrant/todoapp/
+
+    # 5. Inject your environment variables directly into a local file
+    - name: Create .env file on App Server
+      run: |
+        ssh vagrant@192.168.65.132 "cat << 'EOF' > /home/vagrant/todoapp/.env
+        DB_NAME=${{ secrets.DB_NAME }}
+        DB_USER=${{ secrets.DB_USER }}
+        DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+        EOF"
+
+    # 6. Boot the containers safely without local interpolation bugs
+    - name: Start Docker Containers
+      run: |
+        ssh vagrant@192.168.65.132 "
+          cd /home/vagrant/todoapp &&
+          docker compose --env-file .env -p mytodoapp down -v &&
+          docker compose --env-file .env -p mytodoapp up --build --force-recreate -d &&
+          docker compose -p mytodoapp ps
+        "
+
+    # 7. Smoke Test
+    - name: Smoke Test Application
+      run: |
+        sleep 20
+        code=$(curl -s -o /dev/null -w "%{http_code}" http://192.168.65.132:8080/)
+        echo "Homepage returned HTTP $code"
+        if [ "$code" != "200" ]; then
+          exit 1
+        fi
