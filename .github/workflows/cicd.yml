@@ -1,71 +1,69 @@
-name: Deploy Todo Application
+name: Deploy Todo App
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ] # Triggers on push like githubPush()
+ 
+env:
+  APP_HOST: ${{ secrets.APP_HOST }}
+  APP_IP: ${{ secrets.APP_IP }}
+  DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
+  COMPOSE: ${{ secrets.COMPOSE }}
 
 jobs:
-  test-and-deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. Pull code down to the runner
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    # 2. Compile test code (Replaces your Jenkins backend test stage)
-    # 2. Compile test code
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.9'  # <--- Fixed the typo here!
+      - name: Test (backend)
+        run: |
+          cd backend
+          python3 -m py_compile $(find src -name "*.py")
 
-    - name: Run Backend Syntax Test
-      run: |
-        cd backend
-        python -m py_compile $(find src -name "*.py")
+      - name: Configure SSH Key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.APP_SERVER_SSH_KEY }}
 
-    # 3. Configure SSH Keys to talk to your Vagrant VM
-    - name: Install SSH Key
-      uses: shimataro/ssh-key-action@v2
-      with:
-        key: ${{ secrets.APP_SERVER_SSH_KEY }}
-        known_hosts: 'placeholder'
-        if_key_exists: replace
+      - name: Add Remote Host to Known Hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${APP_IP}" >> ~/.ssh/known_hosts
+          ssh-keyscan -H "${APP_HOST}" >> ~/.ssh/known_hosts
 
-    # 4. Sync files over to the app server using Rsync
-    - name: Deploy Files via Rsync
-      run: |
-        ssh-keyscan -H 192.168.65.132 >> ~/.ssh/known_hosts
-        rsync -az --delete --exclude venv --exclude .git --exclude postgres_data \
-          -e "ssh" \
-          ./ vagrant@192.168.65.132:/home/vagrant/todoapp/
+      - name: Copy project files
+        run: |
+          ssh ubuntu@${APP_HOST} "mkdir -p ${DEPLOY_DIR}"
+          rsync -az --delete --exclude venv --exclude .git ./ ubuntu@${APP_HOST}:${DEPLOY_DIR}/
 
-    # 5. Inject your environment variables directly into a local file
-    - name: Create .env file on App Server
-      run: |
-        ssh vagrant@192.168.65.132 "cat << 'EOF' > /home/vagrant/todoapp/.env
-        DB_NAME=${{ secrets.DB_NAME }}
-        DB_USER=${{ secrets.DB_USER }}
-        DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-        EOF"
+      - name: Deploy .env file
+        run: |
+          echo "${{ secrets.TODO_ENV }}" > .env
+          scp .env ubuntu@${APP_HOST}:${DEPLOY_DIR}/.env
+          rm .env
 
-    # 6. Boot the containers safely without local interpolation bugs
-    - name: Start Docker Containers
-      run: |
-        ssh vagrant@192.168.65.132 "
-          cd /home/vagrant/todoapp &&
-          docker compose --env-file .env -p mytodoapp down -v &&
-          docker compose --env-file .env -p mytodoapp up --build --force-recreate -d &&
-          docker compose -p mytodoapp ps
-        "
+      - name: Restart Docker Compose Services
+        run: |
+          ssh ubuntu@${APP_HOST} "
+            cd ${DEPLOY_DIR} &&
+            ${COMPOSE} up --build -d &&
+            ${COMPOSE} ps
+          "
 
-    # 7. Smoke Test
-    - name: Smoke Test Application
-      run: |
-        sleep 20
-        code=$(curl -s -o /dev/null -w "%{http_code}" http://192.168.65.132:8080/)
-        echo "Homepage returned HTTP $code"
-        if [ "$code" != "200" ]; then
-          exit 1
-        fi
+      - name: Smoke test
+        run: |
+          sleep 20
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://${APP_IP}:8080/)
+          echo "Homepage returned HTTP $code"
+          test "$code" = "200"
+
+      - name: Notify Success
+        if: success()
+        run: echo "Deployed. App live at http://${APP_IP}:8080/"
+
+      - name: Notify Failure
+        if: failure()
+        run: echo "Failed — check the stage logs above"
