@@ -1,69 +1,74 @@
-name: Deploy Todo App
+name: CI/CD Todo Application
 
 on:
   push:
-    branches: [ "main" ] # Triggers on push like githubPush()
- 
-env:
-  APP_HOST: ${{ secrets.APP_HOST }}
-  APP_IP: ${{ secrets.APP_IP }}
-  DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
-  COMPOSE: ${{ secrets.COMPOSE }}
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
 jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
+  test-and-deploy:
+    # Forces the job to run locally on your VM runner instead of GitHub's cloud
+    runs-on: self-hosted
+
+    # Centralized global environment variables for the steps below
+    env:
+      APP_IP: '192.168.65.132'
+      APP_HOST: 'vagrant@192.168.65.132'
+      DEPLOY_DIR: '/home/vagrant/todoapp'
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    # 1. Pull the codebase into your runner directory
+    - name: Checkout Code
+      uses: actions/checkout@v4
 
-      - name: Test (backend)
-        run: |
-          cd backend
-          python3 -m py_compile $(find src -name "*.py")
+    # 2. Set up Python for test execution
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
 
-      - name: Configure SSH Key
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.APP_SERVER_SSH_KEY }}
+    # 3. Compile python files to check for typos/syntax errors
+    - name: Run Backend Syntax Test
+      run: |
+        cd backend
+        find src -name "*.py" -exec python -m py_compile {} +
 
-      - name: Add Remote Host to Known Hosts
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -H "${APP_IP}" >> ~/.ssh/known_hosts
-          ssh-keyscan -H "${APP_HOST}" >> ~/.ssh/known_hosts
+    # 4. Spin up the SSH key manager using your GitHub Secret
+    - name: Setup SSH Keys
+      uses: webfactory/ssh-agent@v0.9.0
+      with:
+        ssh-private-key: ${{ secrets.APP_SERVER_SSH_KEY }}
 
-      - name: Copy project files
-        run: |
-          ssh ubuntu@${APP_HOST} "mkdir -p ${DEPLOY_DIR}"
-          rsync -az --delete --exclude venv --exclude .git ./ ubuntu@${APP_HOST}:${DEPLOY_DIR}/
+    # 5. Authorize the App Server to prevent manual 'yes/no' prompts
+    - name: Scan Remote Host Keys
+      run: |
+        mkdir -p ~/.ssh
+        ssh-keyscan -H "${APP_IP}" >> ~/.ssh/known_hosts
 
-      - name: Deploy .env file
-        run: |
-          echo "${{ secrets.TODO_ENV }}" > .env
-          scp .env ubuntu@${APP_HOST}:${DEPLOY_DIR}/.env
-          rm .env
+    # 6. Push the code files cleanly to the target server
+    - name: Deploy Files via Rsync
+      run: |
+        ssh ${APP_HOST} "mkdir -p ${DEPLOY_DIR}"
+        rsync -az --delete --exclude venv --exclude .git --exclude postgres_data \
+          -e "ssh" \
+          ./ ${APP_HOST}:${DEPLOY_DIR}/
 
-      - name: Restart Docker Compose Services
-        run: |
-          ssh ubuntu@${APP_HOST} "
-            cd ${DEPLOY_DIR} &&
-            ${COMPOSE} up --build -d &&
-            ${COMPOSE} ps
-          "
+    # 7. Securely drop the production credentials onto the app server
+    - name: Create Remote Environment File
+      run: |
+        ssh ${APP_HOST} "cat << 'EOF' > ${DEPLOY_DIR}/.env
+        DB_NAME=${{ vars.DB_NAME }}
+        DB_USER=${{ vars.DB_USER }}
+        DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+        EOF"
 
-      - name: Smoke test
-        run: |
-          sleep 20
-          code=$(curl -s -o /dev/null -w "%{http_code}" http://${APP_IP}:8080/)
-          echo "Homepage returned HTTP $code"
-          test "$code" = "200"
-
-      - name: Notify Success
-        if: success()
-        run: echo "Deployed. App live at http://${APP_IP}:8080/"
-
-      - name: Notify Failure
-        if: failure()
-        run: echo "Failed — check the stage logs above"
+    # 8. Rebuild and launch the clean infrastructure stack
+    - name: Start Docker Containers
+      run: |
+        ssh ${APP_HOST} "
+          cd ${DEPLOY_DIR} &&
+          docker compose --env-file .env -p mytodoapp down -v &&
+          docker compose --env-file .env -p mytodoapp up --build --force-recreate -d &&
+          docker compose -p mytodoapp ps
+        "
