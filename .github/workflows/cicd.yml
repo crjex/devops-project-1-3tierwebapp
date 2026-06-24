@@ -9,7 +9,7 @@ on:
 jobs:
   test-and-deploy:
     # Forces the job to run locally on your VM runner instead of GitHub's cloud
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     # Centralized global environment variables for the steps below
     env:
